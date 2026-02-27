@@ -110,9 +110,12 @@ export function useOcr(): { runOcr: (canvas: HTMLCanvasElement, pageNumber: numb
         // the correct tesseract-core-*.wasm.js variant name after CPU feature detection.
         workerPath: `${import.meta.env.BASE_URL}tesseract-worker.min.js`,
         corePath: import.meta.env.BASE_URL.replace(/\/$/, ''),
+        // Use GitHub raw URLs for language data since jsDelivr doesn't have Thai
+        langPath: 'https://raw.githubusercontent.com/tesseract-ocr/tessdata/main',
+        // GitHub raw serves uncompressed traineddata files, not gzipped
+        gzip: false,
         // Use the default jsDelivr CDN (compatible with tesseract.js-core v7)
         // instead of the older projectnaptha CDN which may serve incompatible data.
-        // langPath is intentionally omitted to use the Tesseract.js v7 default.
         workerBlobURL: false,
       })
       workerRef.current = worker

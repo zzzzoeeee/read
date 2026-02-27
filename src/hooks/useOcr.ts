@@ -1,8 +1,9 @@
 import { useRef, useCallback, useEffect } from 'react'
 import { createWorker } from 'tesseract.js'
+import type { Worker as TesseractWorker } from 'tesseract.js'
 import { useStore } from '../state/useStore'
 
-const LANGUAGE_LABELS = {
+const LANGUAGE_LABELS: Record<string, string> = {
   eng: 'English', fra: 'French', deu: 'German', spa: 'Spanish',
   ita: 'Italian', por: 'Portuguese', rus: 'Russian', chi_sim: 'Chinese (Simplified)',
   chi_tra: 'Chinese (Traditional)', jpn: 'Japanese', kor: 'Korean',
@@ -13,11 +14,8 @@ const LANGUAGE_LABELS = {
  * Convert a canvas element to a PNG Blob via toDataURL.
  * This avoids the toBlob/FileReader async pipeline which can fail
  * silently in certain browser environments.
- *
- * @param {HTMLCanvasElement} canvas
- * @returns {Blob} PNG blob
  */
-function canvasToPngBlob(canvas) {
+function canvasToPngBlob(canvas: HTMLCanvasElement): Blob {
   const dataUrl = canvas.toDataURL('image/png')
   const base64 = dataUrl.split(',')[1]
   const binaryStr = atob(base64)
@@ -28,11 +26,23 @@ function canvasToPngBlob(canvas) {
   return new Blob([bytes], { type: 'image/png' })
 }
 
+interface PendingOcrRequest {
+  canvas: HTMLCanvasElement
+  pageNumber: number
+  zoom: number
+  forceRun: boolean
+}
+
+interface InitStatusEntry {
+  label: string
+  progress: number
+}
+
 /**
  * OCR hook using a single Tesseract.js worker.
  * Caches results per (pageNumber, zoom, language) key.
  */
-export function useOcr() {
+export function useOcr(): { runOcr: (canvas: HTMLCanvasElement, pageNumber: number, zoom: number, forceRun?: boolean) => Promise<string | null> } {
   const ocrLanguage = useStore((s) => s.ocrLanguage)
   const ocrCache = useStore((s) => s.ocrCache)
   const setOcrResult = useStore((s) => s.setOcrResult)
@@ -42,16 +52,16 @@ export function useOcr() {
   const setWorkerReady = useStore((s) => s.setWorkerReady)
   const setWorkerInitProgress = useStore((s) => s.setWorkerInitProgress)
 
-  const workerRef = useRef(null)
+  const workerRef = useRef<TesseractWorker | null>(null)
   const workerReadyRef = useRef(false)
-  const currentLangRef = useRef(null)
-  const pendingRef = useRef(null)
+  const currentLangRef = useRef<string | null>(null)
+  const pendingRef = useRef<PendingOcrRequest | null>(null)
   const isRunningRef = useRef(false)
   // Keep a stable ref to runOcr so initWorker's setTimeout can call the latest version
-  const runOcrRef = useRef(null)
+  const runOcrRef = useRef<((canvas: HTMLCanvasElement, pageNumber: number, zoom: number, forceRun?: boolean) => Promise<string | null>) | null>(null)
 
   // Map Tesseract init status strings to human-readable labels and 0-100 progress
-  const INIT_STATUS_MAP = {
+  const INIT_STATUS_MAP: Record<string, InitStatusEntry> = {
     'loading tesseract core': { label: 'Loading engine…', progress: 10 },
     'initializing tesseract': { label: 'Initializing engine…', progress: 30 },
     'initialized tesseract': { label: 'Engine ready', progress: 50 },
@@ -62,9 +72,9 @@ export function useOcr() {
   }
 
   // Initialize / reinitialize worker when language changes
-  const initWorker = useCallback(async (lang) => {
+  const initWorker = useCallback(async (lang: string) => {
     if (workerRef.current) {
-      try { await workerRef.current.terminate() } catch (_) {}
+      try { await workerRef.current.terminate() } catch (_) { /* ignore */ }
       workerRef.current = null
       workerReadyRef.current = false
     }
@@ -77,7 +87,7 @@ export function useOcr() {
 
     try {
       const worker = await createWorker(lang, 1, {
-        logger: (m) => {
+        logger: (m: { status: string; progress: number }) => {
           if (m.status === 'recognizing text') {
             setOcrProgress(Math.round(m.progress * 100))
           } else {
@@ -132,22 +142,22 @@ export function useOcr() {
   }, [setOcrProgress, addOcrLog, setWorkerReady, setWorkerInitProgress])
 
   useEffect(() => {
-    initWorker(ocrLanguage)
+    void initWorker(ocrLanguage)
     return () => {
       if (workerRef.current) {
-        workerRef.current.terminate().catch(() => {})
+        workerRef.current.terminate().catch(() => { /* ignore */ })
       }
     }
   }, [ocrLanguage, initWorker])
 
   /**
    * Run OCR on a canvas element.
-   * @param {HTMLCanvasElement} canvas - source canvas (full page render)
-   * @param {number} pageNumber
-   * @param {number} zoom
-   * @param {boolean} forceRun - skip cache and re-run even if result is cached
+   * @param canvas - source canvas (full page render)
+   * @param pageNumber
+   * @param zoom
+   * @param forceRun - skip cache and re-run even if result is cached
    */
-  const runOcr = useCallback(async (canvas, pageNumber, zoom, forceRun = false) => {
+  const runOcr = useCallback(async (canvas: HTMLCanvasElement, pageNumber: number, zoom: number, forceRun = false): Promise<string | null> => {
     const cacheKey = `${pageNumber}:${zoom.toFixed(2)}:${ocrLanguage}`
 
     // Return cached result unless force-running
@@ -184,7 +194,7 @@ export function useOcr() {
     try {
       // Downsample for OCR if canvas is very large
       const MAX_OCR_DIM = 2400
-      let sourceCanvas = canvas
+      let sourceCanvas: HTMLCanvasElement = canvas
 
       if (canvas.width > MAX_OCR_DIM || canvas.height > MAX_OCR_DIM) {
         const ratio = Math.min(MAX_OCR_DIM / canvas.width, MAX_OCR_DIM / canvas.height)
@@ -220,7 +230,7 @@ export function useOcr() {
       return trimmed
     } catch (err) {
       console.error('OCR error:', err)
-      let errMsg
+      let errMsg: string
       if (err instanceof Error) {
         errMsg = err.message || err.toString()
       } else if (typeof err === 'string') {
@@ -239,7 +249,7 @@ export function useOcr() {
       if (pendingRef.current) {
         const { canvas: c, pageNumber: pn, zoom: z, forceRun: fr } = pendingRef.current
         pendingRef.current = null
-        runOcr(c, pn, z, fr)
+        void runOcr(c, pn, z, fr)
       }
     }
   }, [ocrLanguage, ocrCache, setOcrResult, setOcrLoading, setOcrProgress, addOcrLog])

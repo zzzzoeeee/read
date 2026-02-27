@@ -1,36 +1,21 @@
-import { useEffect, useRef, useCallback, useState } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useStore } from '../state/useStore'
 import { useAutoScroll } from '../hooks/useAutoScroll'
-import { useOcr } from '../hooks/useOcr'
-import * as pdfjsLib from 'pdfjs-dist'
 
-// DPR-aware canvas rendering helper
-async function renderPageToCanvas(pdfDoc, pageNumber, scale, canvas) {
-  if (!pdfDoc || !canvas || pageNumber < 1) return null
-  try {
-    const page = await pdfDoc.getPage(pageNumber)
-    const viewport = page.getViewport({ scale })
-    const dpr = Math.min(window.devicePixelRatio || 1, 2)
-    canvas.width = Math.floor(viewport.width * dpr)
-    canvas.height = Math.floor(viewport.height * dpr)
-    canvas.style.width = `${Math.floor(viewport.width)}px`
-    canvas.style.height = `${Math.floor(viewport.height)}px`
-    const ctx = canvas.getContext('2d')
-    ctx.scale(dpr, dpr)
-    const task = page.render({ canvasContext: ctx, viewport })
-    await task.promise
-    return canvas
-  } catch (err) {
-    if (err?.name === 'RenderingCancelledException') return null
-    throw err
-  }
+interface PdfPageProps {
+  pdfDoc: PDFDocumentProxy
+  pageNumber: number
+  scale: number
+  onPageVisible?: (pageNumber: number) => void
+  onCanvasReady?: (canvas: HTMLCanvasElement, pageNumber: number) => void
 }
 
 // Single page component
-function PdfPage({ pdfDoc, pageNumber, scale, onPageVisible, onCanvasReady }) {
-  const canvasRef = useRef(null)
-  const renderTaskRef = useRef(null)
-  const observerRef = useRef(null)
+function PdfPage({ pdfDoc, pageNumber, scale, onPageVisible, onCanvasReady }: PdfPageProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+  const renderTaskRef = useRef<{ cancel: () => void } | null>(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
   const lastRenderRef = useRef({ pageNumber: 0, scale: 0 })
 
   useEffect(() => {
@@ -39,7 +24,7 @@ function PdfPage({ pdfDoc, pageNumber, scale, onPageVisible, onCanvasReady }) {
     if (lastRenderRef.current.pageNumber === pageNumber && lastRenderRef.current.scale === scale) return
 
     if (renderTaskRef.current) {
-      try { renderTaskRef.current.cancel() } catch (_) {}
+      try { renderTaskRef.current.cancel() } catch (_) { /* ignore */ }
       renderTaskRef.current = null
     }
 
@@ -56,6 +41,7 @@ function PdfPage({ pdfDoc, pageNumber, scale, onPageVisible, onCanvasReady }) {
         canvas.style.width = `${Math.floor(viewport.width)}px`
         canvas.style.height = `${Math.floor(viewport.height)}px`
         const ctx = canvas.getContext('2d')
+        if (!ctx) return
         ctx.scale(dpr, dpr)
         const task = page.render({ canvasContext: ctx, viewport })
         renderTaskRef.current = task
@@ -64,16 +50,17 @@ function PdfPage({ pdfDoc, pageNumber, scale, onPageVisible, onCanvasReady }) {
         lastRenderRef.current = { pageNumber, scale }
         onCanvasReady?.(canvas, pageNumber)
       } catch (err) {
-        if (err?.name === 'RenderingCancelledException') return
+        const e = err as { name?: string }
+        if (e?.name === 'RenderingCancelledException') return
         console.error(`Page ${pageNumber} render error:`, err)
       }
     }
 
-    render()
+    void render()
     return () => {
       cancelled = true
       if (renderTaskRef.current) {
-        try { renderTaskRef.current.cancel() } catch (_) {}
+        try { renderTaskRef.current.cancel() } catch (_) { /* ignore */ }
       }
     }
   }, [pdfDoc, pageNumber, scale, onCanvasReady])
@@ -115,7 +102,12 @@ function PdfPage({ pdfDoc, pageNumber, scale, onPageVisible, onCanvasReady }) {
   )
 }
 
-export function PdfViewer({ scrollContainerRef, onCanvasReady }) {
+interface PdfViewerProps {
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>
+  onCanvasReady: (canvas: HTMLCanvasElement, pageNumber: number) => void
+}
+
+export function PdfViewer({ scrollContainerRef, onCanvasReady }: PdfViewerProps) {
   const pdfDoc = useStore((s) => s.pdfDoc)
   const totalPages = useStore((s) => s.totalPages)
   const currentPage = useStore((s) => s.currentPage)
@@ -130,7 +122,7 @@ export function PdfViewer({ scrollContainerRef, onCanvasReady }) {
   useAutoScroll(scrollContainerRef)
 
   // Track pinch-zoom for touch
-  const lastTouchDistRef = useRef(null)
+  const lastTouchDistRef = useRef<number | null>(null)
 
   // Fit width on demand
   useEffect(() => {
@@ -142,13 +134,13 @@ export function PdfViewer({ scrollContainerRef, onCanvasReady }) {
         const containerWidth = container.clientWidth - 48 // padding
         const fitScale = containerWidth / viewport.width
         setZoom(Math.round(fitScale * 100) / 100)
-      }).catch(() => {})
+      }).catch(() => { /* ignore */ })
     }
     window.addEventListener('pdf-fit-width', handler)
     return () => window.removeEventListener('pdf-fit-width', handler)
   }, [pdfDoc, scrollContainerRef, setZoom])
 
-  const handlePageVisible = useCallback((pageNum) => {
+  const handlePageVisible = useCallback((pageNum: number) => {
     setCurrentPage(pageNum)
   }, [setCurrentPage])
 
@@ -162,7 +154,7 @@ export function PdfViewer({ scrollContainerRef, onCanvasReady }) {
   }, [currentPage, snapToPage])
 
   // Touch pinch zoom
-  const handleTouchStart = (e) => {
+  const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2) {
       const dx = e.touches[0].clientX - e.touches[1].clientX
       const dy = e.touches[0].clientY - e.touches[1].clientY
@@ -170,7 +162,7 @@ export function PdfViewer({ scrollContainerRef, onCanvasReady }) {
     }
   }
 
-  const handleTouchMove = (e) => {
+  const handleTouchMove = (e: React.TouchEvent<HTMLDivElement>) => {
     if (e.touches.length === 2 && lastTouchDistRef.current !== null) {
       const dx = e.touches[0].clientX - e.touches[1].clientX
       const dy = e.touches[0].clientY - e.touches[1].clientY
@@ -186,7 +178,7 @@ export function PdfViewer({ scrollContainerRef, onCanvasReady }) {
   }
 
   // Wheel zoom (Ctrl+wheel)
-  const handleWheel = useCallback((e) => {
+  const handleWheel = useCallback((e: WheelEvent) => {
     if (e.ctrlKey || e.metaKey) {
       e.preventDefault()
       const delta = e.deltaY > 0 ? -0.1 : 0.1

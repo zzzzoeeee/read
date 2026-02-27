@@ -6,9 +6,9 @@ export function PdfLoader() {
   const setPdfUrl = useStore((s) => s.setPdfUrl)
   const pdfUrl = useStore((s) => s.pdfUrl)
   const [isDragging, setIsDragging] = useState(false)
-  const fileInputRef = useRef(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const handleFile = useCallback((file) => {
+  const handleFile = useCallback((file: File) => {
     if (!file) return
     if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
       alert('Please select a PDF file.')
@@ -21,18 +21,18 @@ export function PdfLoader() {
     setPdfUrl(url)
   }, [pdfUrl, setPdfFile, setPdfUrl])
 
-  const handleInputChange = (e) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (file) handleFile(file)
     e.target.value = '' // allow re-selecting same file
   }
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setIsDragging(true)
   }
   const handleDragLeave = () => setIsDragging(false)
-  const handleDrop = (e) => {
+  const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault()
     setIsDragging(false)
     const file = e.dataTransfer.files?.[0]

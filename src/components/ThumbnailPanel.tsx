@@ -1,10 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useStore } from '../state/useStore'
 
-function Thumbnail({ pdfDoc, pageNumber, isActive, onClick }) {
-  const canvasRef = useRef(null)
+interface ThumbnailProps {
+  pdfDoc: PDFDocumentProxy
+  pageNumber: number
+  isActive: boolean
+  onClick: () => void
+}
+
+function Thumbnail({ pdfDoc, pageNumber, isActive, onClick }: ThumbnailProps) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
   const [rendered, setRendered] = useState(false)
-  const observerRef = useRef(null)
+  const observerRef = useRef<IntersectionObserver | null>(null)
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -23,10 +31,12 @@ function Thumbnail({ pdfDoc, pageNumber, isActive, onClick }) {
           canvas.width = Math.floor(viewport.width)
           canvas.height = Math.floor(viewport.height)
           const ctx = canvas.getContext('2d')
+          if (!ctx) return
           await page.render({ canvasContext: ctx, viewport }).promise
           setRendered(true)
         } catch (err) {
-          if (err?.name !== 'RenderingCancelledException') {
+          const e = err as { name?: string }
+          if (e?.name !== 'RenderingCancelledException') {
             console.error(`Thumbnail ${pageNumber} error:`, err)
           }
         }
@@ -82,7 +92,7 @@ export function ThumbnailPanel() {
 
   if (!pdfDoc) return null
 
-  const handlePageClick = (pageNum) => {
+  const handlePageClick = (pageNum: number) => {
     setCurrentPage(pageNum)
     if (!snapToPage) {
       // Scroll to the page in the viewer

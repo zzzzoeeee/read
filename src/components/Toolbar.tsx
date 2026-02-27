@@ -1,7 +1,11 @@
 import { useRef, useState } from 'react'
 import { useStore } from '../state/useStore'
 
-export function Toolbar({ onOpenFile }) {
+interface ToolbarProps {
+  onOpenFile: () => void
+}
+
+export function Toolbar({ onOpenFile }: ToolbarProps) {
   const darkMode = useStore((s) => s.darkMode)
   const toggleDarkMode = useStore((s) => s.toggleDarkMode)
   const currentPage = useStore((s) => s.currentPage)
@@ -16,16 +20,15 @@ export function Toolbar({ onOpenFile }) {
   const pdfDoc = useStore((s) => s.pdfDoc)
 
   const [pageInput, setPageInput] = useState('')
-  const fileInputRef = useRef(null)
 
-  const handlePageSubmit = (e) => {
+  const handlePageSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault()
     const num = parseInt(pageInput, 10)
     if (!isNaN(num)) setCurrentPage(num)
     setPageInput('')
   }
 
-  const zoomOptions = [
+  const zoomOptions: Array<{ label: string; value: number | string }> = [
     { label: 'Fit Width', value: 'fit-width' },
     { label: '50%', value: 0.5 },
     { label: '75%', value: 0.75 },

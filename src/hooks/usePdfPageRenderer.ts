@@ -1,16 +1,31 @@
 import { useEffect, useRef, useCallback } from 'react'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
+
+interface RenderCompletePayload {
+  canvas: HTMLCanvasElement
+  pageNumber: number
+  scale: number
+}
+
+interface UsePdfPageRendererOptions {
+  pdfDoc: PDFDocumentProxy | null
+  pageNumber: number
+  scale: number
+  canvas: HTMLCanvasElement | null
+  onRenderComplete?: (payload: RenderCompletePayload) => void
+}
 
 /**
  * Renders a PDF page to a canvas element.
- * @param {object} options
- * @param {PDFDocumentProxy|null} options.pdfDoc
- * @param {number} options.pageNumber
- * @param {number} options.scale
- * @param {HTMLCanvasElement|null} options.canvas
- * @param {function} options.onRenderComplete - called with { canvas, pageNumber, scale }
  */
-export function usePdfPageRenderer({ pdfDoc, pageNumber, scale, canvas, onRenderComplete }) {
-  const renderTaskRef = useRef(null)
+export function usePdfPageRenderer({
+  pdfDoc,
+  pageNumber,
+  scale,
+  canvas,
+  onRenderComplete,
+}: UsePdfPageRendererOptions): void {
+  const renderTaskRef = useRef<{ cancel: () => void } | null>(null)
   const lastRenderRef = useRef({ pageNumber: 0, scale: 0 })
 
   const renderPage = useCallback(async () => {
@@ -24,7 +39,7 @@ export function usePdfPageRenderer({ pdfDoc, pageNumber, scale, canvas, onRender
 
     // Cancel any in-flight render
     if (renderTaskRef.current) {
-      try { renderTaskRef.current.cancel() } catch (_) {}
+      try { renderTaskRef.current.cancel() } catch (_) { /* ignore */ }
       renderTaskRef.current = null
     }
 
@@ -40,6 +55,7 @@ export function usePdfPageRenderer({ pdfDoc, pageNumber, scale, canvas, onRender
       canvas.style.height = `${Math.floor(viewport.height)}px`
 
       const ctx = canvas.getContext('2d')
+      if (!ctx) return
       ctx.scale(dpr, dpr)
 
       const renderContext = {
@@ -54,16 +70,17 @@ export function usePdfPageRenderer({ pdfDoc, pageNumber, scale, canvas, onRender
       lastRenderRef.current = { pageNumber, scale }
       onRenderComplete?.({ canvas, pageNumber, scale })
     } catch (err) {
-      if (err?.name === 'RenderingCancelledException') return
+      const e = err as { name?: string }
+      if (e?.name === 'RenderingCancelledException') return
       console.error('Page render error:', err)
     }
   }, [pdfDoc, pageNumber, scale, canvas, onRenderComplete])
 
   useEffect(() => {
-    renderPage()
+    void renderPage()
     return () => {
       if (renderTaskRef.current) {
-        try { renderTaskRef.current.cancel() } catch (_) {}
+        try { renderTaskRef.current.cancel() } catch (_) { /* ignore */ }
       }
     }
   }, [renderPage])

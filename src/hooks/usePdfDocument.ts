@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react'
 import * as pdfjsLib from 'pdfjs-dist'
+import type { PDFDocumentProxy } from 'pdfjs-dist'
 import { useStore } from '../state/useStore'
 
 // Set worker source using import.meta.url for Vite compatibility
@@ -8,13 +9,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   import.meta.url,
 ).toString()
 
-export function usePdfDocument() {
+export function usePdfDocument(): void {
   const pdfUrl = useStore((s) => s.pdfUrl)
   const setPdfDoc = useStore((s) => s.setPdfDoc)
   const setPdfLoading = useStore((s) => s.setPdfLoading)
   const setPdfError = useStore((s) => s.setPdfError)
   const clearOcrCache = useStore((s) => s.clearOcrCache)
-  const currentDocRef = useRef(null)
+  const currentDocRef = useRef<PDFDocumentProxy | null>(null)
 
   useEffect(() => {
     if (!pdfUrl) {
@@ -33,7 +34,7 @@ export function usePdfDocument() {
       if (currentDocRef.current) {
         try {
           await currentDocRef.current.destroy()
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
         currentDocRef.current = null
       }
 
@@ -48,7 +49,7 @@ export function usePdfDocument() {
         })
 
         // Password handler
-        loadingTask.onPassword = (updatePassword, reason) => {
+        loadingTask.onPassword = (updatePassword: (password: string) => void, reason: number) => {
           const password = window.prompt(
             reason === 1
               ? 'This PDF is password-protected. Enter password:'
@@ -73,32 +74,33 @@ export function usePdfDocument() {
       } catch (err) {
         if (cancelled) return
         console.error('PDF load error:', err)
-        if (err.name === 'PasswordException') {
+        const pdfErr = err as { name?: string; message?: string }
+        if (pdfErr.name === 'PasswordException') {
           setPdfError('This PDF is password-protected and could not be opened.')
-        } else if (err.name === 'InvalidPDFException') {
+        } else if (pdfErr.name === 'InvalidPDFException') {
           setPdfError('This file is not a valid PDF or is corrupted.')
-        } else if (err.name === 'MissingPDFException') {
+        } else if (pdfErr.name === 'MissingPDFException') {
           setPdfError('The PDF file could not be found.')
         } else {
-          setPdfError(`Failed to load PDF: ${err.message}`)
+          setPdfError(`Failed to load PDF: ${pdfErr.message ?? String(err)}`)
         }
       } finally {
         if (!cancelled) setPdfLoading(false)
       }
     }
 
-    loadPdf()
+    void loadPdf()
 
     return () => {
       cancelled = true
     }
-  }, [pdfUrl])
+  }, [pdfUrl, setPdfDoc, setPdfLoading, setPdfError, clearOcrCache])
 
   // Cleanup on unmount
   useEffect(() => {
     return () => {
       if (currentDocRef.current) {
-        currentDocRef.current.destroy().catch(() => {})
+        currentDocRef.current.destroy().catch(() => { /* ignore */ })
       }
     }
   }, [])

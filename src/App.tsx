@@ -29,9 +29,9 @@ export default function App() {
   const toggleDarkMode = useStore((s) => s.toggleDarkMode)
   const pdfUrl = useStore((s) => s.pdfUrl)
 
-  const scrollContainerRef = useRef(null)
-  const fileInputRef = useRef(null)
-  const canvasMapRef = useRef({}) // pageNumber -> canvas element
+  const scrollContainerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const canvasMapRef = useRef<Record<number, HTMLCanvasElement>>({}) // pageNumber -> canvas element
 
   // Load PDF document when URL changes
   usePdfDocument()
@@ -39,14 +39,14 @@ export default function App() {
   // OCR hook
   const { runOcr } = useOcr()
 
-  const triggerOcrForPage = useCallback((pageNumber, canvas, force = false) => {
+  const triggerOcrForPage = useCallback((pageNumber: number, canvas: HTMLCanvasElement | null, force = false) => {
     const c = canvas || canvasMapRef.current[pageNumber]
     if (!c) return
-    runOcr(c, pageNumber, zoom, force)
+    void runOcr(c, pageNumber, zoom, force)
   }, [runOcr, zoom])
 
   // Track latest rendered canvas per page
-  const handleCanvasReady = useCallback((canvas, pageNumber) => {
+  const handleCanvasReady = useCallback((canvas: HTMLCanvasElement, pageNumber: number) => {
     canvasMapRef.current[pageNumber] = canvas
     triggerOcrForPage(pageNumber, canvas)
   }, [triggerOcrForPage])
@@ -72,7 +72,7 @@ export default function App() {
     fileInputRef.current?.click()
   }, [])
 
-  const handleFileChange = useCallback((e) => {
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     if (file.type !== 'application/pdf' && !file.name.endsWith('.pdf')) {
@@ -88,10 +88,10 @@ export default function App() {
 
   // Keyboard shortcuts
   useEffect(() => {
-    const handler = (e) => {
+    const handler = (e: KeyboardEvent) => {
       // Don't fire if focus is in an input/select/textarea
-      const tag = document.activeElement?.tagName
-      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return
+      const tag = (document.activeElement as HTMLElement | null)?.tagName
+      if (tag && ['INPUT', 'SELECT', 'TEXTAREA'].includes(tag)) return
 
       switch (e.key) {
         case ' ':

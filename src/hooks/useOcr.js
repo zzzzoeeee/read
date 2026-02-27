@@ -7,6 +7,7 @@ const LANGUAGE_LABELS = {
   ita: 'Italian', por: 'Portuguese', rus: 'Russian', chi_sim: 'Chinese (Simplified)',
   chi_tra: 'Chinese (Traditional)', jpn: 'Japanese', kor: 'Korean',
   ara: 'Arabic', hin: 'Hindi', nld: 'Dutch', pol: 'Polish',
+  tha: 'Thai',
 }
 
 /**

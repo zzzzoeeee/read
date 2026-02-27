@@ -17,6 +17,7 @@ const SUPPORTED_LANGUAGES = [
   { code: 'hin', label: 'Hindi' },
   { code: 'nld', label: 'Dutch' },
   { code: 'pol', label: 'Polish' },
+  { code: 'tha', label: 'Thai' },
 ]
 
 export function OcrPanel({ onRunOcr }) {

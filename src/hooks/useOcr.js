@@ -9,6 +9,26 @@ const LANGUAGE_LABELS = {
   ara: 'Arabic', hin: 'Hindi', nld: 'Dutch', pol: 'Polish',
 }
 
+// Map Tesseract init status strings to human-readable labels and cumulative progress %
+// Order matters: earlier phases have lower progress values
+const INIT_STATUS_MAP = [
+  { key: 'loading tesseract core',      label: 'Loading engine…',         from: 0,  to: 20  },
+  { key: 'initializing tesseract',      label: 'Initializing engine…',    from: 20, to: 40  },
+  { key: 'initialized tesseract',       label: 'Engine ready',            from: 40, to: 50  },
+  { key: 'loading language traineddata',label: 'Loading language data…',  from: 50, to: 85  },
+  { key: 'loaded language traineddata', label: 'Language data loaded',    from: 85, to: 90  },
+  { key: 'initializing api',            label: 'Starting OCR engine…',    from: 90, to: 99  },
+  { key: 'initialized api',             label: 'OCR engine ready',        from: 99, to: 99  },
+]
+
+/** Safely convert any thrown value to a string for logging */
+function errMsg(err) {
+  if (!err) return 'Unknown error'
+  if (typeof err === 'string') return err
+  if (err.message) return err.message
+  try { return JSON.stringify(err) } catch (_) { return String(err) }
+}
+
 /**
  * OCR hook using a single Tesseract.js worker.
  * Caches results per (pageNumber, zoom, language) key.
@@ -28,17 +48,6 @@ export function useOcr() {
   const currentLangRef = useRef(null)
   const pendingRef = useRef(null)
   const isRunningRef = useRef(false)
-
-  // Map Tesseract init status strings to human-readable labels and 0-100 progress
-  const INIT_STATUS_MAP = {
-    'loading tesseract core': { label: 'Loading engine…', progress: 10 },
-    'initializing tesseract': { label: 'Initializing engine…', progress: 30 },
-    'initialized tesseract': { label: 'Engine ready', progress: 50 },
-    'loading language traineddata': { label: 'Loading language data…', progress: 60 },
-    'loaded language traineddata': { label: 'Language data loaded', progress: 80 },
-    'initializing api': { label: 'Starting OCR engine…', progress: 90 },
-    'initialized api': { label: 'OCR engine ready', progress: 100 },
-  }
 
   // Initialize / reinitialize worker when language changes
   const initWorker = useCallback(async (lang) => {
@@ -61,15 +70,13 @@ export function useOcr() {
             setOcrProgress(Math.round(m.progress * 100))
           } else {
             // Report initialization progress
-            const statusKey = m.status?.toLowerCase() ?? ''
-            const mapped = Object.entries(INIT_STATUS_MAP).find(([k]) => statusKey.includes(k))
-            if (mapped) {
-              const [, { label, progress: baseProgress }] = mapped
-              // Sub-progress within a phase is available via m.progress (0-1)
-              const subProgress = typeof m.progress === 'number' ? m.progress : 1
-              const next = Math.round(baseProgress * subProgress)
-              // Use the base progress when sub-progress hits 1, otherwise interpolate
-              setWorkerInitProgress(Math.min(99, Math.max(next, 0)), label)
+            const statusKey = (m.status ?? '').toLowerCase()
+            const phase = INIT_STATUS_MAP.find(({ key }) => statusKey.includes(key))
+            if (phase) {
+              // Interpolate within the phase range using sub-progress (0–1)
+              const sub = typeof m.progress === 'number' ? Math.max(0, Math.min(1, m.progress)) : 1
+              const pct = Math.round(phase.from + (phase.to - phase.from) * sub)
+              setWorkerInitProgress(pct, phase.label)
             }
           }
         },
@@ -98,7 +105,7 @@ export function useOcr() {
       workerReadyRef.current = false
       setWorkerReady(false)
       setWorkerInitProgress(0, 'Failed')
-      addOcrLog(`Worker init failed: ${err.message}`)
+      addOcrLog(`Worker init failed: ${errMsg(err)}`)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setOcrProgress, addOcrLog, setWorkerReady, setWorkerInitProgress])
@@ -187,7 +194,7 @@ export function useOcr() {
       return trimmed
     } catch (err) {
       console.error('OCR error:', err)
-      addOcrLog(`Error during OCR on page ${pageNumber}: ${err.message}`)
+      addOcrLog(`Error during OCR on page ${pageNumber}: ${errMsg(err)}`)
       return null
     } finally {
       isRunningRef.current = false

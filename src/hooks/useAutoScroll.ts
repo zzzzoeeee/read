@@ -3,16 +3,16 @@ import { useStore } from '../state/useStore'
 
 /**
  * Auto-scroll hook using requestAnimationFrame.
- * @param {React.RefObject} scrollContainerRef - ref to the scrollable container
+ * @param scrollContainerRef - ref to the scrollable container
  */
-export function useAutoScroll(scrollContainerRef) {
+export function useAutoScroll(scrollContainerRef: React.RefObject<HTMLDivElement | null>): void {
   const isScrolling = useStore((s) => s.isScrolling)
   const scrollSpeed = useStore((s) => s.scrollSpeed)
   const scrollDirection = useStore((s) => s.scrollDirection)
   const setIsScrolling = useStore((s) => s.setIsScrolling)
 
-  const rafRef = useRef(null)
-  const lastTimeRef = useRef(null)
+  const rafRef = useRef<number | null>(null)
+  const lastTimeRef = useRef<number | null>(null)
   const isScrollingRef = useRef(isScrolling)
   const speedRef = useRef(scrollSpeed)
   const directionRef = useRef(scrollDirection)
@@ -22,7 +22,7 @@ export function useAutoScroll(scrollContainerRef) {
   useEffect(() => { speedRef.current = scrollSpeed }, [scrollSpeed])
   useEffect(() => { directionRef.current = scrollDirection }, [scrollDirection])
 
-  const step = useCallback((timestamp) => {
+  const step = useCallback((timestamp: number) => {
     if (!isScrollingRef.current) {
       lastTimeRef.current = null
       return

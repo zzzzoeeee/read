@@ -19,7 +19,11 @@ const SUPPORTED_LANGUAGES = [
   { code: 'pol', label: 'Polish' },
 ]
 
-export function OcrPanel({ onRunOcr }) {
+interface OcrPanelProps {
+  onRunOcr: () => void
+}
+
+export function OcrPanel({ onRunOcr }: OcrPanelProps) {
   const currentPage = useStore((s) => s.currentPage)
   const zoom = useStore((s) => s.zoom)
   const ocrCache = useStore((s) => s.ocrCache)
@@ -38,10 +42,10 @@ export function OcrPanel({ onRunOcr }) {
   const workerInitStatus = useStore((s) => s.workerInitStatus)
 
   const [copyFeedback, setCopyFeedback] = useState(false)
-  const [tab, setTab] = useState('current') // 'current' | 'all'
+  const [tab, setTab] = useState<'current' | 'all'>('current')
   const [showLog, setShowLog] = useState(false)
 
-  const logTopRef = useRef(null)
+  const logTopRef = useRef<HTMLDivElement>(null)
 
   const cacheKey = `${currentPage}:${zoom.toFixed(2)}:${ocrLanguage}`
   // Distinguish "never processed" (undefined) from "processed but empty" ("")
@@ -321,7 +325,7 @@ export function OcrPanel({ onRunOcr }) {
       {displayText && (
         <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700 flex gap-2">
           <button
-            onClick={copyToClipboard}
+            onClick={() => void copyToClipboard()}
             className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 text-xs font-medium rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 ${
               copyFeedback
                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'

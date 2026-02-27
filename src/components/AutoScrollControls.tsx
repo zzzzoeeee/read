@@ -45,7 +45,7 @@ export function AutoScrollControls() {
 
       {/* Direction toggle */}
       <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
-        {['down', 'up'].map((dir) => (
+        {(['down', 'up'] as const).map((dir) => (
           <button
             key={dir}
             onClick={() => setScrollDirection(dir)}

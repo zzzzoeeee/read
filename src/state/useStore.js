@@ -65,6 +65,16 @@ const sessionSlice = (set) => ({
   setOcrProgress: (p) => set({ ocrProgress: p }),
   clearOcrCache: () => set({ ocrCache: {} }),
 
+  // OCR process log
+  ocrLog: [],   // array of string messages with timestamps (newest first)
+  addOcrLog: (message) => set((s) => {
+    const timestamp = new Date().toLocaleTimeString('en-US', { hour12: false })
+    const entry = `[${timestamp}] ${message}`
+    const updated = [entry, ...s.ocrLog]
+    return { ocrLog: updated.slice(0, 50) }
+  }),
+  clearOcrLog: () => set({ ocrLog: [] }),
+
   // UI panels
   showOcrPanel: true,
   toggleOcrPanel: () => set((s) => ({ showOcrPanel: !s.showOcrPanel })),

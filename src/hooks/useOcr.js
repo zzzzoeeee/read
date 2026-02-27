@@ -191,7 +191,8 @@ export function useOcr() {
       return trimmed
     } catch (err) {
       console.error('OCR error:', err)
-      addOcrLog(`Error during OCR on page ${pageNumber}: ${err.message}`)
+      const errMsg = err instanceof Error ? err.message : String(err ?? 'unknown error')
+      addOcrLog(`Error during OCR on page ${pageNumber}: ${errMsg}`)
       return null
     } finally {
       isRunningRef.current = false

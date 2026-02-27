@@ -73,9 +73,11 @@ export function useOcr() {
             }
           }
         },
-        // Serve worker and WASM from public/ so they are accessible as static assets
+        // Serve worker and WASM from public/ so they are accessible as static assets.
+        // corePath must be a directory URL (not a .wasm file path): the worker appends
+        // the correct tesseract-core-*.wasm.js variant name after CPU feature detection.
         workerPath: `${import.meta.env.BASE_URL}tesseract-worker.min.js`,
-        corePath: `${import.meta.env.BASE_URL}tesseract-core-simd-lstm.wasm`,
+        corePath: import.meta.env.BASE_URL.replace(/\/$/, ''),
         langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
       })
       workerRef.current = worker

@@ -65,6 +65,13 @@ const sessionSlice = (set) => ({
   setOcrProgress: (p) => set({ ocrProgress: p }),
   clearOcrCache: () => set({ ocrCache: {} }),
 
+  // OCR worker initialization state
+  workerReady: false,
+  workerInitProgress: 0,   // 0–100, progress of worker init (loading model/data)
+  workerInitStatus: '',    // human-readable status label
+  setWorkerReady: (v) => set({ workerReady: v }),
+  setWorkerInitProgress: (p, status) => set({ workerInitProgress: p, workerInitStatus: status ?? '' }),
+
   // OCR process log
   ocrLog: [],   // array of string messages with timestamps (newest first)
   addOcrLog: (message) => set((s) => {

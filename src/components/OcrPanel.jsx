@@ -33,6 +33,10 @@ export function OcrPanel({ onRunOcr }) {
   const ocrLog = useStore((s) => s.ocrLog)
   const clearOcrLog = useStore((s) => s.clearOcrLog)
 
+  const workerReady = useStore((s) => s.workerReady)
+  const workerInitProgress = useStore((s) => s.workerInitProgress)
+  const workerInitStatus = useStore((s) => s.workerInitStatus)
+
   const [copyFeedback, setCopyFeedback] = useState(false)
   const [tab, setTab] = useState('current') // 'current' | 'all'
   const [showLog, setShowLog] = useState(false)
@@ -160,6 +164,32 @@ export function OcrPanel({ onRunOcr }) {
         </div>
       </div>
 
+      {/* Worker initialization progress */}
+      {!workerReady && (
+        <div className="px-3 py-2 border-b border-amber-100 dark:border-amber-900/40 bg-amber-50 dark:bg-amber-900/20">
+          <div className="flex items-center justify-between text-xs text-amber-700 dark:text-amber-400 mb-1">
+            <span className="flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-3.5 h-3.5 animate-spin shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+              {workerInitStatus || 'Initializing OCR engine…'}
+            </span>
+            <span>{workerInitProgress}%</span>
+          </div>
+          <div className="w-full h-1.5 bg-amber-200 dark:bg-amber-800/50 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-amber-500 dark:bg-amber-400 rounded-full transition-all duration-300"
+              style={{ width: `${workerInitProgress}%` }}
+              role="progressbar"
+              aria-label="OCR worker initialization progress"
+              aria-valuenow={workerInitProgress}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            />
+          </div>
+        </div>
+      )}
+
       {/* OCR progress */}
       {ocrLoading && (
         <div className="px-3 py-2 border-b border-gray-100 dark:border-gray-700">
@@ -195,7 +225,9 @@ export function OcrPanel({ onRunOcr }) {
                 </p>
                 <button
                   onClick={onRunOcr}
-                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!workerReady}
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!workerReady ? 'OCR engine is still initializing…' : undefined}
                 >
                   Re-run OCR
                 </button>
@@ -208,7 +240,9 @@ export function OcrPanel({ onRunOcr }) {
                 </p>
                 <button
                   onClick={onRunOcr}
-                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={!workerReady}
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+                  title={!workerReady ? 'OCR engine is still initializing…' : undefined}
                 >
                   Run OCR Now
                 </button>

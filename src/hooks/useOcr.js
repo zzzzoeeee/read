@@ -20,12 +20,25 @@ export function useOcr() {
   const setOcrLoading = useStore((s) => s.setOcrLoading)
   const setOcrProgress = useStore((s) => s.setOcrProgress)
   const addOcrLog = useStore((s) => s.addOcrLog)
+  const setWorkerReady = useStore((s) => s.setWorkerReady)
+  const setWorkerInitProgress = useStore((s) => s.setWorkerInitProgress)
 
   const workerRef = useRef(null)
   const workerReadyRef = useRef(false)
   const currentLangRef = useRef(null)
   const pendingRef = useRef(null)
   const isRunningRef = useRef(false)
+
+  // Map Tesseract init status strings to human-readable labels and 0-100 progress
+  const INIT_STATUS_MAP = {
+    'loading tesseract core': { label: 'Loading engine…', progress: 10 },
+    'initializing tesseract': { label: 'Initializing engine…', progress: 30 },
+    'initialized tesseract': { label: 'Engine ready', progress: 50 },
+    'loading language traineddata': { label: 'Loading language data…', progress: 60 },
+    'loaded language traineddata': { label: 'Language data loaded', progress: 80 },
+    'initializing api': { label: 'Starting OCR engine…', progress: 90 },
+    'initialized api': { label: 'OCR engine ready', progress: 100 },
+  }
 
   // Initialize / reinitialize worker when language changes
   const initWorker = useCallback(async (lang) => {
@@ -35,6 +48,9 @@ export function useOcr() {
       workerReadyRef.current = false
     }
 
+    setWorkerReady(false)
+    setWorkerInitProgress(0, 'Starting…')
+
     const langLabel = LANGUAGE_LABELS[lang] || lang
     addOcrLog(`Worker initializing for language: ${langLabel}…`)
 
@@ -43,6 +59,18 @@ export function useOcr() {
         logger: (m) => {
           if (m.status === 'recognizing text') {
             setOcrProgress(Math.round(m.progress * 100))
+          } else {
+            // Report initialization progress
+            const statusKey = m.status?.toLowerCase() ?? ''
+            const mapped = Object.entries(INIT_STATUS_MAP).find(([k]) => statusKey.includes(k))
+            if (mapped) {
+              const [, { label, progress: baseProgress }] = mapped
+              // Sub-progress within a phase is available via m.progress (0-1)
+              const subProgress = typeof m.progress === 'number' ? m.progress : 1
+              const next = Math.round(baseProgress * subProgress)
+              // Use the base progress when sub-progress hits 1, otherwise interpolate
+              setWorkerInitProgress(Math.min(99, Math.max(next, 0)), label)
+            }
           }
         },
         // Use bundled wasm from node_modules via Vite
@@ -54,6 +82,8 @@ export function useOcr() {
       workerReadyRef.current = true
       currentLangRef.current = lang
       setOcrProgress(0)
+      setWorkerInitProgress(100, 'Ready')
+      setWorkerReady(true)
       addOcrLog('Worker ready')
 
       // Process any request that was queued while worker was initializing
@@ -66,10 +96,12 @@ export function useOcr() {
     } catch (err) {
       console.error('Tesseract worker init failed:', err)
       workerReadyRef.current = false
+      setWorkerReady(false)
+      setWorkerInitProgress(0, 'Failed')
       addOcrLog(`Worker init failed: ${err.message}`)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setOcrProgress, addOcrLog])
+  }, [setOcrProgress, addOcrLog, setWorkerReady, setWorkerInitProgress])
 
   useEffect(() => {
     initWorker(ocrLanguage)

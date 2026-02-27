@@ -73,9 +73,9 @@ export function useOcr() {
             }
           }
         },
-        // Use bundled wasm from node_modules via Vite
-        workerPath: new URL('tesseract.js/dist/worker.min.js', import.meta.url).toString(),
-        corePath: new URL('tesseract.js-core/tesseract-core-simd-lstm.wasm', import.meta.url).toString(),
+        // Serve worker and WASM from public/ so they are accessible as static assets
+        workerPath: `${import.meta.env.BASE_URL}tesseract-worker.min.js`,
+        corePath: `${import.meta.env.BASE_URL}tesseract-core-simd-lstm.wasm`,
         langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
       })
       workerRef.current = worker
@@ -98,7 +98,9 @@ export function useOcr() {
       workerReadyRef.current = false
       setWorkerReady(false)
       setWorkerInitProgress(0, 'Failed')
-      addOcrLog(`Worker init failed: ${err.message}`)
+      // err may be a string, ErrorEvent.message, or an Error object
+      const errMsg = (err instanceof Error ? err.message : String(err ?? 'unknown error'))
+      addOcrLog(`Worker init failed: ${errMsg}`)
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [setOcrProgress, addOcrLog, setWorkerReady, setWorkerInitProgress])

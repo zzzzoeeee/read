@@ -10,6 +10,25 @@ const LANGUAGE_LABELS = {
 }
 
 /**
+ * Convert a canvas element to a PNG Blob via toDataURL.
+ * This avoids the toBlob/FileReader async pipeline which can fail
+ * silently in certain browser environments.
+ *
+ * @param {HTMLCanvasElement} canvas
+ * @returns {Blob} PNG blob
+ */
+function canvasToPngBlob(canvas) {
+  const dataUrl = canvas.toDataURL('image/png')
+  const base64 = dataUrl.split(',')[1]
+  const binaryStr = atob(base64)
+  const bytes = new Uint8Array(binaryStr.length)
+  for (let i = 0; i < binaryStr.length; i++) {
+    bytes[i] = binaryStr.charCodeAt(i)
+  }
+  return new Blob([bytes], { type: 'image/png' })
+}
+
+/**
  * OCR hook using a single Tesseract.js worker.
  * Caches results per (pageNumber, zoom, language) key.
  */
@@ -28,6 +47,8 @@ export function useOcr() {
   const currentLangRef = useRef(null)
   const pendingRef = useRef(null)
   const isRunningRef = useRef(false)
+  // Keep a stable ref to runOcr so initWorker's setTimeout can call the latest version
+  const runOcrRef = useRef(null)
 
   // Map Tesseract init status strings to human-readable labels and 0-100 progress
   const INIT_STATUS_MAP = {
@@ -78,7 +99,10 @@ export function useOcr() {
         // the correct tesseract-core-*.wasm.js variant name after CPU feature detection.
         workerPath: `${import.meta.env.BASE_URL}tesseract-worker.min.js`,
         corePath: import.meta.env.BASE_URL.replace(/\/$/, ''),
-        langPath: 'https://tessdata.projectnaptha.com/4.0.0_best',
+        // Use the default jsDelivr CDN (compatible with tesseract.js-core v7)
+        // instead of the older projectnaptha CDN which may serve incompatible data.
+        // langPath is intentionally omitted to use the Tesseract.js v7 default.
+        workerBlobURL: false,
       })
       workerRef.current = worker
       workerReadyRef.current = true
@@ -88,12 +112,12 @@ export function useOcr() {
       setWorkerReady(true)
       addOcrLog('Worker ready')
 
-      // Process any request that was queued while worker was initializing
+      // Process any request that was queued while worker was initializing.
+      // Use runOcrRef to access the latest runOcr closure (avoids stale closure bug).
       if (pendingRef.current) {
         const { canvas: c, pageNumber: pn, zoom: z, forceRun: fr } = pendingRef.current
         pendingRef.current = null
-        // Use setTimeout to avoid calling runOcr before it's defined in closure
-        setTimeout(() => runOcr(c, pn, z, fr), 0)
+        setTimeout(() => runOcrRef.current?.(c, pn, z, fr), 0)
       }
     } catch (err) {
       console.error('Tesseract worker init failed:', err)
@@ -158,10 +182,9 @@ export function useOcr() {
     }
 
     try {
-      // Downsample for OCR: target ~150 DPI equivalent
-      // If the canvas is very large, scale it down
+      // Downsample for OCR if canvas is very large
       const MAX_OCR_DIM = 2400
-      let imageSource = canvas
+      let sourceCanvas = canvas
 
       if (canvas.width > MAX_OCR_DIM || canvas.height > MAX_OCR_DIM) {
         const ratio = Math.min(MAX_OCR_DIM / canvas.width, MAX_OCR_DIM / canvas.height)
@@ -169,17 +192,23 @@ export function useOcr() {
         offscreen.width = Math.floor(canvas.width * ratio)
         offscreen.height = Math.floor(canvas.height * ratio)
         const ctx = offscreen.getContext('2d')
-        // Convert to grayscale for better OCR accuracy
-        ctx.filter = 'grayscale(1) contrast(1.2)'
-        ctx.drawImage(canvas, 0, 0, offscreen.width, offscreen.height)
-        imageSource = offscreen
+        if (ctx) {
+          // Convert to grayscale for better OCR accuracy
+          ctx.filter = 'grayscale(1) contrast(1.2)'
+          ctx.drawImage(canvas, 0, 0, offscreen.width, offscreen.height)
+          sourceCanvas = offscreen
+        }
       }
 
-      const { data: { text } } = await workerRef.current.recognize(imageSource)
+      // Convert canvas to PNG Blob using toDataURL for reliable cross-browser support.
+      // Passing the canvas element directly to Tesseract.js triggers toBlob/FileReader
+      // which can fail silently in some environments (null blob, async issues).
+      const imageBlob = canvasToPngBlob(sourceCanvas)
+
+      const result = await workerRef.current.recognize(imageBlob)
+      const text = result?.data?.text ?? ''
       const trimmed = text.trim()
 
-      // When force-running, remove old cache entry first (setOcrResult overwrites anyway,
-      // but being explicit makes the intent clear)
       setOcrResult(cacheKey, trimmed)
 
       if (trimmed.length > 0) {
@@ -191,7 +220,14 @@ export function useOcr() {
       return trimmed
     } catch (err) {
       console.error('OCR error:', err)
-      const errMsg = err instanceof Error ? err.message : String(err ?? 'unknown error')
+      let errMsg
+      if (err instanceof Error) {
+        errMsg = err.message || err.toString()
+      } else if (typeof err === 'string') {
+        errMsg = err || 'unknown error'
+      } else {
+        errMsg = String(err ?? 'unknown error')
+      }
       addOcrLog(`Error during OCR on page ${pageNumber}: ${errMsg}`)
       return null
     } finally {
@@ -207,6 +243,11 @@ export function useOcr() {
       }
     }
   }, [ocrLanguage, ocrCache, setOcrResult, setOcrLoading, setOcrProgress, addOcrLog])
+
+  // Keep runOcrRef in sync with the latest runOcr closure
+  useEffect(() => {
+    runOcrRef.current = runOcr
+  }, [runOcr])
 
   return { runOcr }
 }

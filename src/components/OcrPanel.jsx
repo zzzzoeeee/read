@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useStore } from '../state/useStore'
 
 const SUPPORTED_LANGUAGES = [
@@ -30,12 +30,20 @@ export function OcrPanel({ onRunOcr }) {
   const ocrFontSize = useStore((s) => s.ocrFontSize)
   const setOcrFontSize = useStore((s) => s.setOcrFontSize)
   const clearOcrCache = useStore((s) => s.clearOcrCache)
+  const ocrLog = useStore((s) => s.ocrLog)
+  const clearOcrLog = useStore((s) => s.clearOcrLog)
 
   const [copyFeedback, setCopyFeedback] = useState(false)
   const [tab, setTab] = useState('current') // 'current' | 'all'
+  const [showLog, setShowLog] = useState(false)
+
+  const logTopRef = useRef(null)
 
   const cacheKey = `${currentPage}:${zoom.toFixed(2)}:${ocrLanguage}`
-  const currentText = ocrCache[cacheKey] || ''
+  // Distinguish "never processed" (undefined) from "processed but empty" ("")
+  const currentText = ocrCache[cacheKey]
+  const currentTextProcessed = currentText !== undefined // was OCR run for this key?
+  const currentTextValue = currentText ?? ''             // safe string for display
 
   const allText = Object.entries(ocrCache)
     .filter(([k]) => k.endsWith(`:${ocrLanguage}`))
@@ -50,7 +58,14 @@ export function OcrPanel({ onRunOcr }) {
     })
     .join('\n\n')
 
-  const displayText = tab === 'current' ? currentText : allText
+  const displayText = tab === 'current' ? currentTextValue : allText
+
+  // Auto-scroll log to top (newest entry) when entries change
+  useEffect(() => {
+    if (showLog && logTopRef.current) {
+      logTopRef.current.scrollTop = 0
+    }
+  }, [ocrLog, showLog])
 
   const copyToClipboard = async () => {
     if (!displayText) return
@@ -81,6 +96,9 @@ export function OcrPanel({ onRunOcr }) {
     a.click()
     URL.revokeObjectURL(url)
   }
+
+  // Whether we should show the empty/no-text state for "current page" tab
+  const showEmptyState = tab === 'current' && !displayText && !ocrLoading
 
   return (
     <aside className="flex flex-col h-full bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700" aria-label="OCR text panel">
@@ -164,22 +182,27 @@ export function OcrPanel({ onRunOcr }) {
 
       {/* Text area */}
       <div className="flex-1 overflow-y-auto p-3 scrollbar-thin">
-        {displayText ? (
-          <pre
-            className="whitespace-pre-wrap font-sans text-gray-700 dark:text-gray-300 leading-relaxed"
-            style={{ fontSize: `${ocrFontSize}px` }}
-          >
-            {displayText}
-          </pre>
-        ) : (
+        {showEmptyState ? (
           <div className="flex flex-col items-center justify-center h-full gap-3 text-center py-8">
-            {ocrLoading ? (
-              <div className="text-sm text-gray-400 dark:text-gray-500">Running OCR…</div>
-            ) : (
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+            </svg>
+            {currentTextProcessed ? (
+              // Was processed but returned empty string
               <>
-                <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10 text-gray-300 dark:text-gray-600" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
-                </svg>
+                <p className="text-sm text-gray-400 dark:text-gray-500">
+                  OCR found no readable text on this page.
+                </p>
+                <button
+                  onClick={onRunOcr}
+                  className="px-4 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+                >
+                  Re-run OCR
+                </button>
+              </>
+            ) : (
+              // Never been processed
+              <>
                 <p className="text-sm text-gray-400 dark:text-gray-500">
                   No OCR text yet for this page.
                 </p>
@@ -190,6 +213,71 @@ export function OcrPanel({ onRunOcr }) {
                   Run OCR Now
                 </button>
               </>
+            )}
+          </div>
+        ) : ocrLoading && !displayText ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-sm text-gray-400 dark:text-gray-500">Running OCR…</div>
+          </div>
+        ) : (
+          <pre
+            className="whitespace-pre-wrap font-sans text-gray-700 dark:text-gray-300 leading-relaxed"
+            style={{ fontSize: `${ocrFontSize}px` }}
+          >
+            {displayText}
+          </pre>
+        )}
+      </div>
+
+      {/* Process Log */}
+      <div className="border-t border-gray-200 dark:border-gray-700">
+        {/* Log header / toggle */}
+        <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 dark:bg-gray-900/50 select-none">
+          <button
+            onClick={() => setShowLog((v) => !v)}
+            className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors focus:outline-none"
+            aria-expanded={showLog}
+          >
+            {/* Chevron */}
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className={`w-3 h-3 transition-transform duration-150 ${showLog ? 'rotate-180' : ''}`}
+              fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
+            Process Log ({ocrLog.length})
+          </button>
+          {ocrLog.length > 0 && (
+            <button
+              onClick={clearOcrLog}
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors focus:outline-none"
+              aria-label="Clear process log"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Log entries */}
+        {showLog && (
+          <div
+            ref={logTopRef}
+            className="max-h-40 overflow-y-auto bg-gray-900 dark:bg-gray-950 scrollbar-thin"
+          >
+            {ocrLog.length === 0 ? (
+              <p className="px-3 py-2 text-xs text-gray-500 font-mono">No log entries yet.</p>
+            ) : (
+              <ul className="py-1">
+                {ocrLog.map((entry, i) => (
+                  <li
+                    key={i}
+                    className="px-3 py-0.5 text-xs font-mono text-gray-400 leading-relaxed hover:bg-gray-800 dark:hover:bg-gray-900 whitespace-pre-wrap break-all"
+                  >
+                    {entry}
+                  </li>
+                ))}
+              </ul>
             )}
           </div>
         )}

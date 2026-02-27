@@ -2,6 +2,13 @@ import { useRef, useCallback, useEffect } from 'react'
 import { createWorker } from 'tesseract.js'
 import { useStore } from '../state/useStore'
 
+const LANGUAGE_LABELS = {
+  eng: 'English', fra: 'French', deu: 'German', spa: 'Spanish',
+  ita: 'Italian', por: 'Portuguese', rus: 'Russian', chi_sim: 'Chinese (Simplified)',
+  chi_tra: 'Chinese (Traditional)', jpn: 'Japanese', kor: 'Korean',
+  ara: 'Arabic', hin: 'Hindi', nld: 'Dutch', pol: 'Polish',
+}
+
 /**
  * OCR hook using a single Tesseract.js worker.
  * Caches results per (pageNumber, zoom, language) key.
@@ -12,6 +19,7 @@ export function useOcr() {
   const setOcrResult = useStore((s) => s.setOcrResult)
   const setOcrLoading = useStore((s) => s.setOcrLoading)
   const setOcrProgress = useStore((s) => s.setOcrProgress)
+  const addOcrLog = useStore((s) => s.addOcrLog)
 
   const workerRef = useRef(null)
   const workerReadyRef = useRef(false)
@@ -26,6 +34,9 @@ export function useOcr() {
       workerRef.current = null
       workerReadyRef.current = false
     }
+
+    const langLabel = LANGUAGE_LABELS[lang] || lang
+    addOcrLog(`Worker initializing for language: ${langLabel}…`)
 
     try {
       const worker = await createWorker(lang, 1, {
@@ -43,11 +54,22 @@ export function useOcr() {
       workerReadyRef.current = true
       currentLangRef.current = lang
       setOcrProgress(0)
+      addOcrLog('Worker ready')
+
+      // Process any request that was queued while worker was initializing
+      if (pendingRef.current) {
+        const { canvas: c, pageNumber: pn, zoom: z, forceRun: fr } = pendingRef.current
+        pendingRef.current = null
+        // Use setTimeout to avoid calling runOcr before it's defined in closure
+        setTimeout(() => runOcr(c, pn, z, fr), 0)
+      }
     } catch (err) {
       console.error('Tesseract worker init failed:', err)
       workerReadyRef.current = false
+      addOcrLog(`Worker init failed: ${err.message}`)
     }
-  }, [setOcrProgress])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [setOcrProgress, addOcrLog])
 
   useEffect(() => {
     initWorker(ocrLanguage)
@@ -63,29 +85,41 @@ export function useOcr() {
    * @param {HTMLCanvasElement} canvas - source canvas (full page render)
    * @param {number} pageNumber
    * @param {number} zoom
-   * @param {DOMRect|null} viewportRect - optional crop rect in canvas CSS pixels
+   * @param {boolean} forceRun - skip cache and re-run even if result is cached
    */
-  const runOcr = useCallback(async (canvas, pageNumber, zoom) => {
+  const runOcr = useCallback(async (canvas, pageNumber, zoom, forceRun = false) => {
     const cacheKey = `${pageNumber}:${zoom.toFixed(2)}:${ocrLanguage}`
 
-    if (ocrCache[cacheKey] !== undefined) {
+    // Return cached result unless force-running
+    if (!forceRun && ocrCache[cacheKey] !== undefined) {
+      addOcrLog(`OCR skipped — result cached for page ${pageNumber}`)
       return ocrCache[cacheKey]
     }
 
     if (!workerReadyRef.current || !workerRef.current) {
-      console.warn('OCR worker not ready')
+      // Queue the request — will be picked up after initWorker completes
+      pendingRef.current = { canvas, pageNumber, zoom, forceRun }
+      if (forceRun) {
+        addOcrLog(`Force re-running OCR on page ${pageNumber} (queued — worker not ready)`)
+      }
       return null
     }
 
     if (isRunningRef.current) {
       // Queue the latest request, drop older ones
-      pendingRef.current = { canvas, pageNumber, zoom }
+      pendingRef.current = { canvas, pageNumber, zoom, forceRun }
       return null
     }
 
     isRunningRef.current = true
     setOcrLoading(true)
     setOcrProgress(0)
+
+    if (forceRun) {
+      addOcrLog(`Force re-running OCR on page ${pageNumber}`)
+    } else {
+      addOcrLog(`Starting OCR on page ${pageNumber}…`)
+    }
 
     try {
       // Downsample for OCR: target ~150 DPI equivalent
@@ -107,10 +141,21 @@ export function useOcr() {
 
       const { data: { text } } = await workerRef.current.recognize(imageSource)
       const trimmed = text.trim()
+
+      // When force-running, remove old cache entry first (setOcrResult overwrites anyway,
+      // but being explicit makes the intent clear)
       setOcrResult(cacheKey, trimmed)
+
+      if (trimmed.length > 0) {
+        addOcrLog(`OCR complete on page ${pageNumber} — ${trimmed.length} chars found`)
+      } else {
+        addOcrLog(`No text found on page ${pageNumber}`)
+      }
+
       return trimmed
     } catch (err) {
       console.error('OCR error:', err)
+      addOcrLog(`Error during OCR on page ${pageNumber}: ${err.message}`)
       return null
     } finally {
       isRunningRef.current = false
@@ -119,12 +164,12 @@ export function useOcr() {
 
       // Process any queued request
       if (pendingRef.current) {
-        const { canvas: c, pageNumber: pn, zoom: z } = pendingRef.current
+        const { canvas: c, pageNumber: pn, zoom: z, forceRun: fr } = pendingRef.current
         pendingRef.current = null
-        runOcr(c, pn, z)
+        runOcr(c, pn, z, fr)
       }
     }
-  }, [ocrLanguage, ocrCache, setOcrResult, setOcrLoading, setOcrProgress])
+  }, [ocrLanguage, ocrCache, setOcrResult, setOcrLoading, setOcrProgress, addOcrLog])
 
   return { runOcr }
 }

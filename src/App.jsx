@@ -39,10 +39,10 @@ export default function App() {
   // OCR hook
   const { runOcr } = useOcr()
 
-  const triggerOcrForPage = useCallback((pageNumber, canvas) => {
+  const triggerOcrForPage = useCallback((pageNumber, canvas, force = false) => {
     const c = canvas || canvasMapRef.current[pageNumber]
     if (!c) return
-    runOcr(c, pageNumber, zoom)
+    runOcr(c, pageNumber, zoom, force)
   }, [runOcr, zoom])
 
   // Track latest rendered canvas per page
@@ -196,7 +196,7 @@ export default function App() {
         {/* OCR Panel */}
         {showOcrPanel && (
           <div className="w-80 flex-shrink-0 flex flex-col min-h-0 overflow-hidden">
-            <OcrPanel onRunOcr={() => triggerOcrForPage(currentPage, null)} />
+            <OcrPanel onRunOcr={() => triggerOcrForPage(currentPage, null, true)} />
           </div>
         )}
       </div>
